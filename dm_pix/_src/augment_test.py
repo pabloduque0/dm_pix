@@ -20,7 +20,9 @@ from absl.testing import parameterized
 from dm_pix._src import augment
 import jax
 import numpy as np
+import jax.numpy as jnp
 import tensorflow as tf
+import scipy
 
 _IMG_SHAPE = (131, 111, 3)
 _RAND_FLOATS_IN_RANGE = list(
@@ -33,15 +35,17 @@ _KERNEL_SIZE = _IMG_SHAPE[0] / 10.
 class _ImageAugmentationTest(parameterized.TestCase):
   """Runs tests for the various augments with the correct arguments."""
 
-  def _test_fn_with_random_arg(self, images_list, jax_fn, tf_fn, **kw_range):
+  def _test_fn_with_random_arg(
+      self, images_list, jax_fn, tf_fn, scipy_fn, **kw_range):
     pass
 
-  def _test_fn(self, images_list, jax_fn, tf_fn):
+  def _test_fn(self, images_list, jax_fn, tf_fn, scipy_fn):
     pass
 
-  def assertAllCloseTolerant(self, x, y):
+  def assertAllCloseTolerant(self, x, y, tol = None):
     # Increase tolerance on TPU due to lower precision.
-    tol = 1e-2 if jax.local_devices()[0].platform == "tpu" else 1e-4
+    if not tol:
+      tol = 1e-2 if jax.local_devices()[0].platform == "tpu" else 1e-4
     np.testing.assert_allclose(x, y, rtol=tol, atol=tol)
     self.assertEqual(x.dtype, y.dtype)
 
@@ -52,6 +56,7 @@ class _ImageAugmentationTest(parameterized.TestCase):
         images_list,
         jax_fn=augment.adjust_brightness,
         tf_fn=tf.image.adjust_brightness,
+        scipy_fn=None,
         delta=(-0.5, 0.5))
 
     key = jax.random.PRNGKey(0)
@@ -59,6 +64,7 @@ class _ImageAugmentationTest(parameterized.TestCase):
         images_list,
         jax_fn=functools.partial(augment.random_brightness, key),
         tf_fn=None,
+        scipy_fn=None,
         max_delta=(0, 0.5))
 
   @parameterized.named_parameters(("in_range", _RAND_FLOATS_IN_RANGE),
@@ -68,12 +74,14 @@ class _ImageAugmentationTest(parameterized.TestCase):
         images_list,
         jax_fn=augment.adjust_contrast,
         tf_fn=tf.image.adjust_contrast,
+        scipy_fn=None,
         factor=(0.5, 1.5))
     key = jax.random.PRNGKey(0)
     self._test_fn_with_random_arg(
         images_list,
         jax_fn=functools.partial(augment.random_contrast, key, upper=1),
         tf_fn=None,
+        scipy_fn=None,
         lower=(0, 0.9))
 
   # Doesn't make sense outside of [0, 1].
@@ -83,6 +91,7 @@ class _ImageAugmentationTest(parameterized.TestCase):
         images_list,
         jax_fn=augment.adjust_gamma,
         tf_fn=tf.image.adjust_gamma,
+        scipy_fn=None,
         gamma=(0.5, 1.5))
 
   @parameterized.named_parameters(("in_range", _RAND_FLOATS_IN_RANGE),
@@ -105,12 +114,14 @@ class _ImageAugmentationTest(parameterized.TestCase):
         images_list,
         jax_fn=augment.adjust_saturation,
         tf_fn=tf.image.adjust_saturation,
+        scipy_fn=None,
         factor=(0.5, 1.5))
     key = jax.random.PRNGKey(0)
     self._test_fn_with_random_arg(
         images_list,
         jax_fn=functools.partial(augment.random_saturation, key, upper=1),
         tf_fn=None,
+        scipy_fn=None,
         lower=(0, 0.9))
 
   # CPU TF uses a different hue adjustment method outside of the [0, 1] range.
@@ -122,12 +133,14 @@ class _ImageAugmentationTest(parameterized.TestCase):
         images_list,
         jax_fn=augment.adjust_hue,
         tf_fn=tf.image.adjust_hue,
+        scipy_fn=None,
         delta=(-0.5, 0.5))
     key = jax.random.PRNGKey(0)
     self._test_fn_with_random_arg(
         images_list,
         jax_fn=functools.partial(augment.random_hue, key),
         tf_fn=None,
+        scipy_fn=None,
         max_delta=(0, 0.5))
 
   @parameterized.named_parameters(("in_range", _RAND_FLOATS_IN_RANGE),
@@ -136,15 +149,18 @@ class _ImageAugmentationTest(parameterized.TestCase):
     self._test_fn(
         images_list,
         jax_fn=lambda img: augment.rot90(img, k=1),
-        tf_fn=lambda img: tf.image.rot90(img, k=1))
+        tf_fn=lambda img: tf.image.rot90(img, k=1),
+        scipy_fn=None)
     self._test_fn(
         images_list,
         jax_fn=lambda img: augment.rot90(img, k=2),
-        tf_fn=lambda img: tf.image.rot90(img, k=2))
+        tf_fn=lambda img: tf.image.rot90(img, k=2),
+        scipy_fn=None)
     self._test_fn(
         images_list,
         jax_fn=lambda img: augment.rot90(img, k=3),
-        tf_fn=lambda img: tf.image.rot90(img, k=3))
+        tf_fn=lambda img: tf.image.rot90(img, k=3),
+        scipy_fn=None)
 
   # The functions below don't have a TF equivalent to compare to, we just check
   # that they run.
@@ -154,55 +170,121 @@ class _ImageAugmentationTest(parameterized.TestCase):
     self._test_fn(
         images_list,
         jax_fn=augment.flip_left_right,
-        tf_fn=tf.image.flip_left_right)
+        tf_fn=tf.image.flip_left_right,
+        scipy_fn=None)
     self._test_fn(
-        images_list, jax_fn=augment.flip_up_down, tf_fn=tf.image.flip_up_down)
+        images_list,
+        jax_fn=augment.flip_up_down,
+        tf_fn=tf.image.flip_up_down,
+        scipy_fn=None)
     key = jax.random.PRNGKey(0)
     self._test_fn(
         images_list,
         jax_fn=functools.partial(augment.random_flip_left_right, key),
-        tf_fn=None)
+        tf_fn=None,
+        scipy_fn=None)
     self._test_fn(
         images_list,
         jax_fn=functools.partial(augment.random_flip_up_down, key),
-        tf_fn=None)
+        tf_fn=None,
+      scipy_fn=None,)
     self._test_fn_with_random_arg(
         images_list,
         jax_fn=functools.partial(augment.random_flip_left_right, key),
         tf_fn=None,
+        scipy_fn=None,
         probability=(0., 1.))
     self._test_fn_with_random_arg(
         images_list,
         jax_fn=functools.partial(augment.random_flip_up_down, key),
         tf_fn=None,
+        scipy_fn=None,
         probability=(0., 1.))
+
+  @parameterized.named_parameters(
+      ("in_range_constant", _RAND_FLOATS_IN_RANGE, "constant"),
+      ("in_range_nearest", _RAND_FLOATS_IN_RANGE, "nearest"),
+      ("out_of_range_constant", _RAND_FLOATS_OUT_OF_RANGE, "constant"),
+      ("out_of_range_nearest", _RAND_FLOATS_OUT_OF_RANGE, "nearest"))
+  def test_affine_transform(self, images_list, mode):
+    jax_to_scipy_mode = {"constant": "grid-constant"}
+    scipy_mode = (
+      mode if mode not in jax_to_scipy_mode else jax_to_scipy_mode[mode])
+
+    self._test_fn(
+        images_list,
+        jax_fn=functools.partial(
+            augment.affine_transform, matrix=np.eye(3), mode=mode),
+        scipy_fn=functools.partial(
+            scipy.ndimage.affine_transform,
+            matrix=np.eye(3),
+            order=1,
+            mode=scipy_mode),
+        tf_fn=None)
+
+    matrix = jnp.array([[-0.5, 0.2, 40.], [0.8, 0.5, 32], [0., 0., 1.]])
+    self._test_fn(
+        images_list,
+        jax_fn=functools.partial(
+            augment.affine_transform, matrix=matrix, mode=mode),
+        scipy_fn=functools.partial(
+            scipy.ndimage.affine_transform,
+            matrix=matrix,
+            offset=np.array([*matrix[:, -1][:2], 0]),
+            order=1,
+            mode=scipy_mode),
+        tf_fn=None)
+    
+    matrix = jnp.array([[0.4, 0.2, -10.], [0.2, -0.5, 5], [0., 0., 1.]])
+    self._test_fn(
+        images_list,
+        jax_fn=functools.partial(
+            augment.affine_transform, matrix=matrix, mode=mode),
+        scipy_fn=functools.partial(
+            scipy.ndimage.affine_transform,
+            matrix=matrix,
+            offset=np.array([*matrix[:, -1][:2], 0]),
+            order=1,
+            mode=scipy_mode),
+        tf_fn=None)
+    
 
   @parameterized.named_parameters(("in_range", _RAND_FLOATS_IN_RANGE),
                                   ("out_of_range", _RAND_FLOATS_OUT_OF_RANGE))
   def test_solarize(self, images_list):
     self._test_fn_with_random_arg(
-        images_list, jax_fn=augment.solarize, tf_fn=None, threshold=(0., 1.))
+        images_list,
+        jax_fn=augment.solarize,
+        tf_fn=None,
+        scipy_fn=None,
+        threshold=(0., 1.))
 
   @parameterized.named_parameters(("in_range", _RAND_FLOATS_IN_RANGE),
                                   ("out_of_range", _RAND_FLOATS_OUT_OF_RANGE))
   def test_gaussian_blur(self, images_list):
     blur_fn = functools.partial(augment.gaussian_blur, kernel_size=_KERNEL_SIZE)
     self._test_fn_with_random_arg(
-        images_list, jax_fn=blur_fn, tf_fn=None, sigma=(0.1, 2.0))
+        images_list,
+        jax_fn=blur_fn,
+        tf_fn=None,
+        scipy_fn=None,
+        sigma=(0.1, 2.0))
 
   @parameterized.named_parameters(("in_range", _RAND_FLOATS_IN_RANGE),
                                   ("out_of_range", _RAND_FLOATS_OUT_OF_RANGE))
   def test_random_crop(self, images_list):
     key = jax.random.PRNGKey(43)
     crop_fn = lambda img: augment.random_crop(key, img, (100, 100, 3))
-    self._test_fn(images_list, jax_fn=crop_fn, tf_fn=None)
+    self._test_fn(images_list, jax_fn=crop_fn, tf_fn=None, scipy_fn=None)
 
 
 class TestMatchTensorflow(_ImageAugmentationTest):
 
-  def _test_fn_with_random_arg(self, images_list, jax_fn, tf_fn, **kw_range):
+  def _test_fn_with_random_arg(
+      self, images_list, jax_fn, tf_fn, scipy_fn, **kw_range):
     if tf_fn is None:
       return
+    del scipy_fn  # unused.
     assert len(kw_range) == 1
     kw_name, (random_min, random_max) = list(kw_range.items())[0]
     for image_rgb in images_list:
@@ -211,19 +293,46 @@ class TestMatchTensorflow(_ImageAugmentationTest):
       adjusted_tf = tf_fn(image_rgb, argument).numpy()
       self.assertAllCloseTolerant(adjusted_jax, adjusted_tf)
 
-  def _test_fn(self, images_list, jax_fn, tf_fn):
+  def _test_fn(self, images_list, jax_fn, tf_fn, scipy_fn):
     if tf_fn is None:
       return
+    del scipy_fn  # unused.
     for image_rgb in images_list:
       adjusted_jax = jax_fn(image_rgb)
       adjusted_tf = tf_fn(image_rgb).numpy()
       self.assertAllCloseTolerant(adjusted_jax, adjusted_tf)
 
 
+class TestMatchScipy(_ImageAugmentationTest):
+
+  def _test_fn_with_random_arg(
+      self, images_list, jax_fn, tf_fn, scipy_fn, **kw_range):
+    if scipy_fn is None:
+      return
+    del tf_fn  # unused.
+    assert len(kw_range) == 1
+    kw_name, (random_min, random_max) = list(kw_range.items())[0]
+    for image_rgb in images_list:
+      argument = np.random.uniform(random_min, random_max, size=())
+      adjusted_jax = jax_fn(image_rgb, **{kw_name: argument})
+      adjusted_scipy = scipy_fn(image_rgb, argument)
+      self.assertAllCloseTolerant(adjusted_jax, adjusted_scipy, tol=1e-3)
+
+  def _test_fn(self, images_list, jax_fn, tf_fn, scipy_fn):
+    if scipy_fn is None:
+      return
+    del tf_fn  # unused.
+    for image_rgb in images_list:
+      adjusted_jax = jax_fn(image_rgb)
+      adjusted_scipy = scipy_fn(image_rgb)
+      self.assertAllCloseTolerant(adjusted_jax, adjusted_scipy, tol=1e-3)
+
+
 class TestVmap(_ImageAugmentationTest):
 
-  def _test_fn_with_random_arg(self, images_list, jax_fn, tf_fn, **kw_range):
-    del tf_fn  # unused.
+  def _test_fn_with_random_arg(
+      self, images_list, jax_fn, tf_fn, scipy_fn, **kw_range):
+    del tf_fn, scipy_fn  # unused.
     assert len(kw_range) == 1
     kw_name, (random_min, random_max) = list(kw_range.items())[0]
     arguments = [
@@ -241,8 +350,8 @@ class TestVmap(_ImageAugmentationTest):
       adjusted_jax = jax_fn(image_rgb, **{kw_name: argument})
       self.assertAllCloseTolerant(adjusted_jax, adjusted_vmap)
 
-  def _test_fn(self, images_list, jax_fn, tf_fn):
-    del tf_fn  # unused.
+  def _test_fn(self, images_list, jax_fn, tf_fn, scipy_fn):
+    del tf_fn, scipy_fn  # unused.
     fn_vmap = jax.vmap(jax_fn)
     outputs_vmaped = list(fn_vmap(np.stack(images_list, axis=0)))
     assert len(images_list) == len(outputs_vmaped)
@@ -253,8 +362,9 @@ class TestVmap(_ImageAugmentationTest):
 
 class TestJit(_ImageAugmentationTest):
 
-  def _test_fn_with_random_arg(self, images_list, jax_fn, tf_fn, **kw_range):
-    del tf_fn  # unused.
+  def _test_fn_with_random_arg(
+      self, images_list, jax_fn, tf_fn, scipy_fn, **kw_range):
+    del tf_fn, scipy_fn  # unused.
     assert len(kw_range) == 1
     kw_name, (random_min, random_max) = list(kw_range.items())[0]
     jax_fn_jitted = jax.jit(jax_fn)
@@ -264,8 +374,8 @@ class TestJit(_ImageAugmentationTest):
       adjusted_jit = jax_fn_jitted(image_rgb, **{kw_name: argument})
       self.assertAllCloseTolerant(adjusted_jax, adjusted_jit)
 
-  def _test_fn(self, images_list, jax_fn, tf_fn):
-    del tf_fn  # unused.
+  def _test_fn(self, images_list, jax_fn, tf_fn, scipy_fn):
+    del tf_fn, scipy_fn  # unused.
     jax_fn_jitted = jax.jit(jax_fn)
     for image_rgb in images_list:
       adjusted_jax = jax_fn(image_rgb)

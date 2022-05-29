@@ -20,9 +20,11 @@ that of TensorFlow.
 """
 
 from typing import Sequence, Tuple
+import functools
 
 import chex
 from dm_pix._src import color_conversion
+from dm_pix._src import interpolation
 import jax
 import jax.numpy as jnp
 
@@ -295,6 +297,56 @@ def solarize(image: chex.Array, threshold: chex.Numeric) -> chex.Array:
     The solarized image.
   """
   return jnp.where(image < threshold, image, 1. - image)
+
+
+def affine_transform(
+    image: chex.Array,
+    matrix: chex.Array,
+    mode: str = "nearest"
+) -> chex.Array:
+  """Applies an affine transformation given by matrix.
+
+  Currently only linear interpolation is supported.
+
+  Args:
+    image: a JAX array representing an image. Assumes that the image is
+        either ...HWC or ...CHW.
+    matrix: The inverse coordinate transformation matrix, mapping
+        output coordinates to input coordinates.'
+    mode: The mode parameter determines how the input array is extended beyond
+      its boundaries. Default is "nearest" and it uses PIX interpolation, for
+      all other modes we rely on jax.scipy.ndimage.map_coordinates, currently
+      the following methods are supported 'constant', 'nearest', 'wrap' 'mirror'
+      and 'reflect'. But for nearest we default to PIX interpolation as it is
+      faster on accelareators.
+
+  Returns:
+    The input image transformed by the given matrix.
+  """
+  chex.assert_rank(image, {3, 4})
+  has_batch_dim = image.ndim == 4
+
+  meshgrid = jax.numpy.meshgrid(*[
+    jnp.arange(size) for size in image.shape[int(has_batch_dim):]
+  ], indexing = "ij")
+  indices = jnp.concatenate(
+      [jnp.expand_dims(x, axis=-1) for x in meshgrid], axis=-1)
+
+  coordinates = indices @ matrix.T
+  coordinates = jnp.moveaxis(coordinates, source=-1, destination=0)
+  # Alter coordinates to account for offset
+  coordinates = coordinates.at[0].add(matrix[0, 2])
+  coordinates = coordinates.at[1].add(matrix[1, 2])
+
+  if mode == "nearest":
+    interpolate_function = interpolation.flat_nd_linear_interpolate
+  else:
+    interpolate_function = functools.partial(
+        jax.scipy.ndimage.map_coordinates, mode=mode, order=1)
+  if has_batch_dim:
+    interpolate_function = jax.vmap(
+        interpolate_function, in_axes=(0, None), out_axes=0)
+  return interpolate_function(image, coordinates)
 
 
 def random_flip_left_right(
