@@ -238,6 +238,52 @@ def elastic_deformation(
         transformed_image, source=-1, destination=channel_axis)
   return transformed_image
 
+def center_crop(
+    image: chex.Array,
+    target_height: int,
+    target_width: int,
+    *,
+    channel_axis: int = -1,
+) -> chex.Array:
+  """
+  In case of odd size along any dimension the bottom/right side gets the extra pixel.
+
+  """
+  chex.assert_rank(image, {3, 4})
+  batch, height, width, channel = _get_dimension_values(image=image, channel_axis=channel_axis)
+  center_h, center_w = height // 2, width // 2
+
+  left = max(center_w - (target_width // 2), 0)
+  right = min(left + target_width, width)
+  top = max(center_h - (target_height // 2), 0)
+  bottom = min(top + target_height, height)
+
+  batch, height, width, channel
+
+  if _channels_last(image, channel_axis):
+    start_indices = (top, left, 0)
+    limit_indices = (bottom, right, channel)
+  else: 
+    start_indices = (0, top, left)
+    limit_indices = (channel, bottom, right)
+
+  if batch: # In case batch of images is given.
+    start_indices = (0, *start_indices)
+    limit_indices = (batch, *limit_indices)
+  
+  return jax.lax.slice(image, start_indices=start_indices, limit_indices=limit_indices)
+
+
+def resize_with_crop_or_pad(
+    image: chex.Array,
+    target_height: int,
+    target_width: int,
+    *,
+    channel_axis: int = -1,
+) -> chex.Array:
+  chex.assert_rank(image, 3)
+  _, height, width, channel = _get_dimension_values(image=image, channel_axis=channel_axis)
+
 
 def flip_left_right(
     image: chex.Array,
@@ -795,3 +841,20 @@ def _get_interpolate_function(
     interpolate_function = functools.partial(
         jax.scipy.ndimage.map_coordinates, mode=mode, order=order, cval=cval)
   return interpolate_function
+
+
+def _get_dimension_values(image: chex.Array, channel_axis: int):
+  """Gets shape values in BHWC order. If single image B is None.
+  """
+  chex.assert_rank(image, {3, 4})
+  if image.ndim == 4:
+    if _channels_last(image=image, channel_axis=channel_axis):
+      batch, height, width, channel = image.shape
+    else:
+      batch, channel, height, width = image.shape
+  else:
+    if _channels_last(image=image, channel_axis=channel_axis):
+      batch, (height, width, channel) = None, image.shape
+    else:
+      batch, (channel, height, width) = None, image.shape
+  return batch, height, width, channel
