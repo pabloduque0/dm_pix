@@ -10,6 +10,8 @@ Augmentations
     adjust_gamma
     adjust_hue
     adjust_saturation
+    affine_transform
+    elastic_transform
     flip_left_right
     flip_up_down
     gaussian_blur
@@ -18,8 +20,10 @@ Augmentations
     random_crop
     random_flip_left_right
     random_flip_up_down
+    random_gamma
     random_hue
     random_saturation
+    rotate
     rot90
     solarize
 
@@ -47,6 +51,16 @@ adjust_saturation
 ~~~~~~~~~~~~~~~~~
 
 .. autofunction:: adjust_saturation
+
+affine_transform
+~~~~~~~~~~~~~~~~~
+
+.. autofunction:: affine_transform
+
+elastic_deformation
+~~~~~~~~~~~~~~~~~
+
+.. autofunction:: elastic_deformation
 
 flip_left_right
 ~~~~~~~~~~~~~~~
@@ -88,6 +102,11 @@ random_flip_up_down
 
 .. autofunction:: random_flip_up_down
 
+random_gamma
+~~~~~~~~~~~~~~~~~~~
+
+.. autofunction:: random_gamma
+
 random_hue
 ~~~~~~~~~~
 
@@ -97,6 +116,11 @@ random_saturation
 ~~~~~~~~~~~~~~~~~
 
 .. autofunction:: random_saturation
+
+rotate
+~~~~~~
+
+.. autofunction:: rotate
 
 rot90
 ~~~~~
@@ -174,11 +198,17 @@ Interpolation functions
 
 .. autosummary::
     flat_nd_linear_interpolate
+    flat_nd_linear_interpolate_constant
 
 flat_nd_linear_interpolate
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autofunction:: flat_nd_linear_interpolate
+
+flat_nd_linear_interpolate_constant
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autofunction:: flat_nd_linear_interpolate_constant
 
 
 Metrics

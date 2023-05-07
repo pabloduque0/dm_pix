@@ -26,6 +26,17 @@ def split_channels(
     image: chex.Array,
     channel_axis: int,
 ) -> Tuple[chex.Array, chex.Array, chex.Array]:
+  """Splits an image into its channels.
+
+  Args:
+    image: an image, with float values in range [0, 1]. Behavior outside of
+      these bounds is not guaranteed.
+    channel_axis: the channel axis. image should have 3 layers along this axis.
+
+  Returns:
+    A tuple of 3 images, with float values in range [0, 1], stacked
+    along channel_axis.
+  """
   chex.assert_axis_dimension(image, axis=channel_axis, expected=3)
   split_axes = jnp.split(image, 3, axis=channel_axis)
   return tuple(map(lambda x: jnp.squeeze(x, axis=channel_axis), split_axes))
@@ -47,6 +58,8 @@ def rgb_to_hsv(
   Returns:
     An HSV image, with float values in range [0, 1], stacked along channel_axis.
   """
+  eps = jnp.finfo(image_rgb.dtype).eps
+  image_rgb = jnp.where(jnp.abs(image_rgb) < eps, 0., image_rgb)
   red, green, blue = split_channels(image_rgb, channel_axis)
   return jnp.stack(
       rgb_planes_to_hsv_planes(red, green, blue), axis=channel_axis)
@@ -87,8 +100,8 @@ def rgb_planes_to_hsv_planes(
 
   Args:
     red: the red color plane.
-    green: the red color plane.
-    blue: the red color plane.
+    green: the green color plane.
+    blue: the blue color plane.
 
   Returns:
     A tuple of (hue, saturation, value) planes, as float values in range [0, 1].
@@ -97,8 +110,14 @@ def rgb_planes_to_hsv_planes(
   minimum = jnp.minimum(jnp.minimum(red, green), blue)
   range_ = value - minimum
 
-  saturation = jnp.where(value > 0, range_ / value, 0.)
-  norm = 1. / (6. * range_)
+  # Avoid divisions by zeros by using safe values for the division. Even if the
+  # results are masked by jnp.where and the function would give correct results,
+  # this would produce NaNs when computing gradients.
+  safe_value = jnp.where(value > 0, value, 1.)
+  safe_range = jnp.where(range_ > 0, range_, 1.)
+
+  saturation = jnp.where(value > 0, range_ / safe_value, 0.)
+  norm = 1. / (6. * safe_range)
 
   hue = jnp.where(value == green,
                   norm * (blue - red) + 2. / 6.,
@@ -156,7 +175,7 @@ def rgb_to_hsl(
       axis.
 
   Returns:
-    An HSV image, with float values in range [0, 1], stacked along channel_axis.
+    An HSL image, with float values in range [0, 1], stacked along channel_axis.
   """
   red, green, blue = split_channels(image_rgb, channel_axis)
 
